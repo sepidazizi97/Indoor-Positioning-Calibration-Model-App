@@ -18,17 +18,88 @@ except:
     XGBOOST_AVAILABLE = False
 
 
+# ---------------------------------------------------
+# Page setup
+# ---------------------------------------------------
+
 st.set_page_config(
-    page_title="PathCalibrate AI",
+    page_title="Indoor Positioning Calibration App",
     layout="wide"
 )
 
-st.title("PathCalibrate AI")
-st.caption(
-    "Regression-based spatial calibration platform for indoor trajectory correction "
-    "using SVM, Random Forest, XGBoost, and Gaussian Process Regression."
-)
+st.markdown("""
+<style>
+.main {
+    background-color: #f7f9fb;
+}
 
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+h1 {
+    color: #1f3b57;
+    font-size: 2.4rem;
+    font-weight: 700;
+}
+
+h2, h3 {
+    color: #24496b;
+}
+
+.stButton > button {
+    background-color: #1f77b4;
+    color: white;
+    border-radius: 10px;
+    padding: 0.6rem 1.2rem;
+    border: none;
+    font-weight: 600;
+}
+
+.stButton > button:hover {
+    background-color: #155d8b;
+    color: white;
+}
+
+[data-testid="stMetric"] {
+    background-color: white;
+    padding: 18px;
+    border-radius: 14px;
+    box-shadow: 0px 2px 10px rgba(0,0,0,0.08);
+}
+
+[data-testid="stTabs"] {
+    background-color: white;
+    border-radius: 14px;
+    padding: 12px;
+}
+
+div[data-testid="stDataFrame"] {
+    border-radius: 12px;
+    overflow: hidden;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div style="background: linear-gradient(135deg, #1f3b57, #3c7fa6);
+            padding: 30px;
+            border-radius: 18px;
+            margin-bottom: 25px;
+            color: white;">
+    <h1 style="color:white; margin-bottom: 5px;">Indoor Positioning Calibration App</h1>
+    <p style="font-size:18px; margin-bottom:0;">
+        A regression-based spatial calibration tool for improving indoor path tracking accuracy
+        using SVM, Random Forest, XGBoost, and Gaussian Process Regression.
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ---------------------------------------------------
+# Functions
+# ---------------------------------------------------
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
@@ -193,10 +264,20 @@ def run_model(model_name, lat_model, lon_model, X_train, X_test, y_lat_train, y_
     return calibrated, summary
 
 
-uploaded_file = st.file_uploader(
-    "Upload your calibration Excel file",
-    type=["xlsx", "csv"]
-)
+# ---------------------------------------------------
+# Upload and run section
+# ---------------------------------------------------
+
+with st.container():
+    st.markdown("### Upload Calibration File")
+    st.write(
+        "Upload your Excel file containing ground-truth points and repeated observed/test points."
+    )
+
+    uploaded_file = st.file_uploader(
+        "Upload Excel or CSV file",
+        type=["xlsx", "csv"]
+    )
 
 if uploaded_file is not None:
 
@@ -210,6 +291,8 @@ if uploaded_file is not None:
     if len(data) == 0:
         st.error("No valid calibration points were found. Please check your column names.")
         st.stop()
+
+    st.info(f"{len(data)} valid calibration observations were detected.")
 
     run_button = st.button("Run Calibration Models")
 
@@ -244,40 +327,65 @@ if uploaded_file is not None:
         calibrated_outputs = {}
         summaries = []
 
-        for model_name, (lat_model, lon_model) in models.items():
-            calibrated, summary = run_model(
-                model_name,
-                lat_model,
-                lon_model,
-                X_train,
-                X_test,
-                y_lat_train,
-                y_lon_train,
-                test_data
-            )
+        with st.spinner("Running calibration models..."):
+            for model_name, (lat_model, lon_model) in models.items():
+                calibrated, summary = run_model(
+                    model_name,
+                    lat_model,
+                    lon_model,
+                    X_train,
+                    X_test,
+                    y_lat_train,
+                    y_lon_train,
+                    test_data
+                )
 
-            calibrated_outputs[model_name] = calibrated
-            summaries.append(summary)
+                calibrated_outputs[model_name] = calibrated
+                summaries.append(summary)
 
         results_df = pd.DataFrame(summaries)
 
         st.session_state["calibrated_outputs"] = calibrated_outputs
         st.session_state["results_df"] = results_df
 
+        st.success("Calibration completed successfully.")
+
+
+# ---------------------------------------------------
+# Results section
+# ---------------------------------------------------
 
 if "calibrated_outputs" in st.session_state:
 
     calibrated_outputs = st.session_state["calibrated_outputs"]
     results_df = st.session_state["results_df"]
 
+    st.markdown("---")
     st.header("Results")
 
     st.write(
         "This section presents the comparative performance of four calibration models "
         "in reducing positional error for indoor path tracking. Results are reported "
-        "using multiple accuracy and reliability metrics to evaluate both average "
-        "performance and robustness to spatial outliers."
+        "using multiple accuracy and reliability metrics to evaluate average performance "
+        "and robustness to spatial outliers."
     )
+
+    best_model = results_df.sort_values("Mean Error").iloc[0]["Model"]
+
+    metric_col1, metric_col2, metric_col3 = st.columns(3)
+
+    with metric_col1:
+        st.metric("Best Model", best_model)
+
+    with metric_col2:
+        best_mean = results_df.sort_values("Mean Error").iloc[0]["Mean Error"]
+        st.metric("Lowest Mean Error", f"{best_mean} m")
+
+    with metric_col3:
+        best_p90 = results_df.sort_values("P90 Reliability").iloc[0]["P90 Reliability"]
+        st.metric("Best P90 Reliability", f"{best_p90} m")
+
+    st.subheader("Comparison of Positional Error Metrics")
 
     display_results = results_df.copy()
     display_results["Mean Error"] = display_results["Mean Error"].astype(str) + " m"
@@ -285,15 +393,15 @@ if "calibrated_outputs" in st.session_state:
     display_results["P90 Reliability"] = display_results["P90 Reliability"].astype(str) + " m"
     display_results["Std Dev"] = display_results["Std Dev"].astype(str) + " m"
 
-    st.subheader("Table 1. Comparison of Positional Error Metrics")
     st.dataframe(
         display_results[
             ["Model", "Mean Error", "Median Error", "P90 Reliability", "Std Dev"]
         ],
-        use_container_width=True
+        use_container_width=True,
+        hide_index=True
     )
 
-    st.subheader("Figure 7. Cumulative Distribution Function of Positioning Error")
+    st.subheader("Cumulative Distribution Function of Positioning Error")
 
     fig, ax = plt.subplots(figsize=(9, 6))
 
@@ -307,11 +415,11 @@ if "calibrated_outputs" in st.session_state:
     ax.set_ylabel("Cumulative Probability")
     ax.set_title("CDF of Positioning Error by Calibration Model")
     ax.legend()
-    ax.grid(True)
+    ax.grid(True, alpha=0.3)
 
     st.pyplot(fig)
 
-    st.subheader("Figure 8. Box-and-Whisker Plot of Residual Positional Errors")
+    st.subheader("Box-and-Whisker Plot of Residual Positional Errors")
 
     boxplot_data = [
         calibrated_outputs[model]["Error_After_m"]
@@ -322,13 +430,12 @@ if "calibrated_outputs" in st.session_state:
     ax2.boxplot(boxplot_data, labels=list(calibrated_outputs.keys()))
     ax2.set_ylabel("Positioning Error After Calibration (meters)")
     ax2.set_title("Distribution of Residual Positional Errors")
-    ax2.grid(True)
+    ax2.grid(True, alpha=0.3)
 
     st.pyplot(fig2)
 
-    best_model = results_df.sort_values("Mean Error").iloc[0]["Model"]
-
-    st.success(f"The best-performing model based on mean positional error is: {best_model}")
+    st.markdown("---")
+    st.header("Calibration Results by Method")
 
     tab_rf, tab_gpr, tab_xgb, tab_svm = st.tabs(
         ["Random Forest", "GPR", "XGBoost", "SVM"]
@@ -364,25 +471,28 @@ if "calibrated_outputs" in st.session_state:
                 model_df["Lon_true"],
                 model_df["Lat_true"],
                 label="Ground-Truth Points",
-                marker="x"
+                marker="x",
+                s=70
             )
 
             ax3.scatter(
                 model_df["Lon_calibrated"],
                 model_df["Lat_calibrated"],
                 label=f"{model_name} Calibrated Points",
-                alpha=0.7
+                alpha=0.7,
+                s=45
             )
 
             ax3.set_xlabel("Longitude")
             ax3.set_ylabel("Latitude")
             ax3.set_title(f"Spatial Distribution of {model_name} Calibrated Points")
             ax3.legend()
-            ax3.grid(True)
+            ax3.grid(True, alpha=0.3)
 
             st.pyplot(fig3)
 
             st.write("### Calibrated Points Table")
+
             st.dataframe(
                 model_df[
                     [
@@ -400,7 +510,8 @@ if "calibrated_outputs" in st.session_state:
                         "Improvement_m"
                     ]
                 ],
-                use_container_width=True
+                use_container_width=True,
+                hide_index=True
             )
 
             csv = model_df.to_csv(index=False).encode("utf-8")
