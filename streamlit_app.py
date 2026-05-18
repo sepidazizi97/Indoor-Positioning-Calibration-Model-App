@@ -20,10 +20,6 @@ except:
     XGBOOST_AVAILABLE = False
 
 
-# ======================================================
-# CONFIG
-# ======================================================
-
 st.set_page_config(
     page_title="Indoor Positioning Calibration App",
     layout="wide"
@@ -31,10 +27,6 @@ st.set_page_config(
 
 GITHUB_SAMPLE_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPOSITORY/main/Callibration_Model.xlsx"
 
-
-# ======================================================
-# STYLE
-# ======================================================
 
 st.markdown("""
 <style>
@@ -61,9 +53,25 @@ st.markdown("""
 
 .info-card {
     background-color: white;
-    padding: 22px;
+    padding: 24px;
     border-radius: 16px;
     box-shadow: 0px 2px 12px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+}
+
+.method-card {
+    background-color: #f8fbff;
+    padding: 20px;
+    border-left: 5px solid #3c7fa6;
+    border-radius: 14px;
+    margin-bottom: 18px;
+}
+
+.warning-card {
+    background-color: #fff8e6;
+    padding: 20px;
+    border-left: 5px solid #f0a500;
+    border-radius: 14px;
     margin-bottom: 18px;
 }
 
@@ -91,24 +99,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ======================================================
-# HEADER
-# ======================================================
-
 st.markdown("""
 <div class="hero-box">
     <div class="hero-title">Indoor Positioning Calibration App</div>
     <div class="hero-subtitle">
         Regression-based spatial calibration tool for improving indoor positioning accuracy
-        using Random Forest, GPR, XGBoost, and SVM.
+        using Random Forest, Gaussian Process Regression, XGBoost, and Support Vector Machine.
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-
-# ======================================================
-# FUNCTIONS
-# ======================================================
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
@@ -348,7 +348,7 @@ def run_calibration(data):
 
 
 def show_results(comparison_df, calibrated_outputs):
-    st.header("Results")
+    st.header("Model Comparison Results")
 
     best_model = comparison_df.sort_values("Mean Error").iloc[0]["Model"]
     best_error = comparison_df.sort_values("Mean Error").iloc[0]["Mean Error"]
@@ -360,7 +360,15 @@ def show_results(comparison_df, calibrated_outputs):
     col2.metric("Lowest Mean Error", f"{best_error} m")
     col3.metric("Best P90 Reliability", f"{best_p90} m")
 
-    st.subheader("Comparison of Positional Error Metrics")
+    st.markdown("""
+    <div class="method-card">
+        <b>How to read this table:</b><br>
+        Mean Error shows the average remaining distance between calibrated points and true points.
+        Median Error shows the typical error level. P90 Reliability means that 90% of points have
+        an error equal to or below that value. Standard deviation shows how stable or variable the
+        model performance is.
+    </div>
+    """, unsafe_allow_html=True)
 
     display_df = comparison_df.copy()
 
@@ -370,6 +378,11 @@ def show_results(comparison_df, calibrated_outputs):
     st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     st.subheader("Cumulative Distribution Function of Positioning Error")
+
+    st.write(
+        "The CDF plot shows how quickly each model reaches lower error values. "
+        "A curve that rises faster indicates better performance and higher reliability."
+    )
 
     fig, ax = plt.subplots(figsize=(9, 6))
 
@@ -388,6 +401,11 @@ def show_results(comparison_df, calibrated_outputs):
     st.pyplot(fig)
 
     st.subheader("Box-and-Whisker Plot of Residual Positional Errors")
+
+    st.write(
+        "The boxplot compares the distribution of residual errors across the four models. "
+        "A lower and more compact box indicates a more stable calibration model."
+    )
 
     fig2, ax2 = plt.subplots(figsize=(9, 6))
 
@@ -418,6 +436,25 @@ def show_results(comparison_df, calibrated_outputs):
         "SVM": tab_svm
     }
 
+    descriptions = {
+        "Random Forest": (
+            "Random Forest uses many decision trees to learn nonlinear spatial error patterns. "
+            "It is often strong when the dataset contains outliers or irregular spatial distortions."
+        ),
+        "GPR": (
+            "Gaussian Process Regression is a probabilistic model that estimates smooth spatial correction patterns. "
+            "It can produce stable corrections but may be sensitive to larger datasets and computational cost."
+        ),
+        "XGBoost": (
+            "XGBoost is a gradient boosting method that builds trees sequentially to reduce prediction error. "
+            "It can capture complex relationships but may be sensitive to noisy indoor positioning data."
+        ),
+        "SVM": (
+            "Support Vector Machine regression uses an RBF kernel to model nonlinear relationships. "
+            "It requires scaling and may perform poorly when the spatial errors include large outliers."
+        )
+    }
+
     for model_name, tab in tabs.items():
         with tab:
             df_model = calibrated_outputs[model_name]
@@ -425,12 +462,23 @@ def show_results(comparison_df, calibrated_outputs):
 
             st.subheader(f"{model_name} Calibration Results")
 
+            st.markdown(f"""
+            <div class="method-card">
+                {descriptions[model_name]}
+            </div>
+            """, unsafe_allow_html=True)
+
             c1, c2, c3, c4 = st.columns(4)
 
             c1.metric("Mean Error", f"{model_summary['Mean Error']} m")
             c2.metric("Median Error", f"{model_summary['Median Error']} m")
             c3.metric("P90 Reliability", f"{model_summary['P90 Reliability']} m")
             c4.metric("Std Dev", f"{model_summary['Std Dev']} m")
+
+            st.write(
+                "The map below compares ground-truth points, original observed points, "
+                "and calibrated points for this model."
+            )
 
             fig3, ax3 = plt.subplots(figsize=(8, 6))
 
@@ -466,6 +514,8 @@ def show_results(comparison_df, calibrated_outputs):
 
             st.pyplot(fig3)
 
+            st.write("### Calibrated Output Table")
+
             st.dataframe(df_model, use_container_width=True, hide_index=True)
 
             csv = df_model.to_csv(index=False).encode("utf-8")
@@ -487,34 +537,32 @@ def show_results(comparison_df, calibrated_outputs):
     )
 
 
-# ======================================================
-# MAIN APP TABS - COMPLETELY SEPARATED
-# ======================================================
-
 main_tab1, main_tab2 = st.tabs([
     "Train & Compare Models",
     "Apply Model to New Location"
 ])
 
 
-# ======================================================
-# TAB 1: TRAIN AND COMPARE
-# ======================================================
-
 with main_tab1:
 
     st.markdown("""
     <div class="info-card">
-        <h3>Train & Compare Calibration Models</h3>
+        <h3>Train & Compare Models</h3>
         <p>
-        This tab uses the calibration dataset with ground-truth points and observed test points.
-        The app trains four calibration models, compares their accuracy, and saves the trained
-        models for future use.
+        This tab uses the built-in calibration dataset saved in the project GitHub repository.
+        The dataset contains known ground-truth control points and repeated observed/test points.
+        The app reshapes the data, calculates residual coordinate offsets, trains four regression
+        models, and compares their ability to reduce positional error.
+        </p>
+        <p>
+        This workflow is useful when you have both observed indoor positioning points and reliable
+        reference points. Because the true locations are known, the app can calculate before-and-after
+        error and provide a direct comparison between models.
         </p>
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("Required Excel Structure"):
+    with st.expander("Excel Structure Used by This App"):
         example_structure = pd.DataFrame({
             "Path-Points": ["Path 1"],
             "Point-ID": [1],
@@ -530,61 +578,32 @@ with main_tab1:
         })
 
         st.write(
-            "The Excel file should be in wide format. Each row represents one ground-control point. "
-            "The app expects true coordinates and repeated observed/test coordinates."
+            "The Excel file is expected to be in wide format. Each row represents one ground-control point. "
+            "The true location is stored in `Lat_true` and `Lon_true`. Repeated observed points are stored as "
+            "`Lat_test_1`, `Lon_test_1`, through `Lat_test_10`, `Lon_test_10`."
         )
 
         st.dataframe(example_structure, hide_index=True, use_container_width=True)
 
-    data_source = st.radio(
-        "Choose data source",
-        [
-            "Use GitHub sample file",
-            "Upload my own file"
-        ],
-        horizontal=True
-    )
+    st.markdown("""
+    <div class="method-card">
+        <b>Built-in GitHub Dataset:</b><br>
+        This app automatically uses the calibration Excel file stored in your GitHub repository.
+        Users do not need to upload the training dataset in this tab. They only need to click the
+        button below to load the GitHub file and run the four calibration models.
+    </div>
+    """, unsafe_allow_html=True)
 
-    raw_df = None
+    if st.button("Load GitHub Calibration File and Run Models", key="load_run_github"):
+        try:
+            raw_df = pd.read_excel(GITHUB_SAMPLE_URL, sheet_name="CM")
+            data = reshape_calibration_excel(raw_df)
 
-    if data_source == "Use GitHub sample file":
-        st.info("The app will use `Callibration_Model.xlsx` from your GitHub repository.")
-
-        if st.button("Load GitHub Sample File"):
-            try:
-                raw_df = pd.read_excel(GITHUB_SAMPLE_URL, sheet_name="CM")
-                st.session_state["raw_df_train"] = raw_df
-                st.success("GitHub sample file loaded successfully.")
-            except Exception:
-                st.error(
-                    "The GitHub file could not be loaded. Make sure you are using the RAW GitHub link."
-                )
-
-    else:
-        uploaded_file = st.file_uploader(
-            "Upload Calibration Excel or CSV File",
-            type=["xlsx", "csv"],
-            key="train_upload"
-        )
-
-        if uploaded_file is not None:
-            if uploaded_file.name.endswith(".csv"):
-                raw_df = pd.read_csv(uploaded_file)
+            if len(data) == 0:
+                st.error("No valid calibration observations were detected in the GitHub file.")
             else:
-                raw_df = pd.read_excel(uploaded_file, sheet_name="CM")
+                st.success(f"{len(data)} valid calibration observations detected from GitHub file.")
 
-            st.session_state["raw_df_train"] = raw_df
-            st.success("File uploaded successfully.")
-
-    if "raw_df_train" in st.session_state:
-        data = reshape_calibration_excel(st.session_state["raw_df_train"])
-
-        if len(data) == 0:
-            st.error("No valid calibration observations were detected.")
-        else:
-            st.success(f"{len(data)} valid calibration observations detected.")
-
-            if st.button("Run Calibration Models", key="run_train"):
                 with st.spinner("Running calibration models..."):
                     comparison_df, calibrated_outputs = run_calibration(data)
 
@@ -593,6 +612,12 @@ with main_tab1:
 
                 st.success("Calibration completed successfully.")
 
+        except Exception as e:
+            st.error(
+                "The GitHub calibration file could not be loaded. Please make sure the raw GitHub link is correct."
+            )
+            st.write(e)
+
     if "comparison_df" in st.session_state and "calibrated_outputs" in st.session_state:
         show_results(
             st.session_state["comparison_df"],
@@ -600,27 +625,32 @@ with main_tab1:
         )
 
 
-# ======================================================
-# TAB 2: APPLY MODEL TO NEW LOCATION
-# ======================================================
-
 with main_tab2:
 
     st.markdown("""
     <div class="info-card">
         <h3>Apply Model to New Location</h3>
         <p>
-        This tab applies a previously trained calibration model to new observed points
-        from another location. Since these new points may not include ground-truth coordinates,
-        the results should be interpreted as estimated calibration.
+        This tab is for users who have collected indoor positioning points in another building or location
+        but do not have ground-truth control points. The app applies one of the trained calibration models
+        to estimate corrected coordinates for the new points.
+        </p>
+        <p>
+        Since no true/reference coordinates are provided in this tab, the app cannot calculate actual
+        positional error. The output should be interpreted as estimated cross-location calibration.
         </p>
     </div>
     """, unsafe_allow_html=True)
 
-    st.warning(
-        "Different buildings may have different layouts, wall materials, signal conditions, "
-        "and environmental interference. Using a model trained on another location can introduce error."
-    )
+    st.markdown("""
+    <div class="warning-card">
+        <b>Important limitation:</b><br>
+        A model trained in one indoor environment may not perfectly transfer to another environment.
+        Different buildings can have different layouts, wall materials, device behavior, Wi-Fi/GPS/Bluetooth
+        signal conditions, and interference patterns. For best results, users should collect at least a few
+        ground-truth points in the new location when possible.
+    </div>
+    """, unsafe_allow_html=True)
 
     with st.expander("Required New-Location File Structure"):
         new_example = pd.DataFrame({
@@ -630,8 +660,9 @@ with main_tab2:
         })
 
         st.write(
-            "For this tab, the new-location file only needs observed coordinates. "
-            "Required columns are `Lat_test` and `Lon_test`."
+            "For this tab, the uploaded file only needs observed coordinates. "
+            "Required columns are `Lat_test` and `Lon_test`. Additional columns such as "
+            "`Point_ID`, `Timestamp`, or `Path_ID` can be included and will be kept in the output."
         )
 
         st.dataframe(new_example, hide_index=True, use_container_width=True)
@@ -657,12 +688,20 @@ with main_tab2:
                 ["Random Forest", "GPR", "XGBoost", "SVM"]
             )
 
+            st.write(
+                "Choose the model you want to apply to the new-location points. "
+                "Random Forest is often a strong option when the training results show lower error, "
+                "but users can test different methods depending on their needs."
+            )
+
             if st.button("Apply Estimated Calibration", key="apply_new"):
+
                 lat_model, lon_model = load_model(model_choice)
 
                 if lat_model is None or lon_model is None:
                     st.error(
-                        "No saved model was found. Please first run the Train & Compare Models tab."
+                        "No saved model was found. Please first run the Train & Compare Models tab "
+                        "to create saved calibration models."
                     )
                 else:
                     X_new = new_df[["Lat_test", "Lon_test"]]
