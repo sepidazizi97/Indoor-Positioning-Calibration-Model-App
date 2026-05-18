@@ -20,32 +20,24 @@ except:
     XGBOOST_AVAILABLE = False
 
 
-# =========================================================
-# PAGE CONFIG
-# =========================================================
+# ======================================================
+# CONFIG
+# ======================================================
 
 st.set_page_config(
     page_title="Indoor Positioning Calibration App",
     layout="wide"
 )
 
+GITHUB_SAMPLE_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPOSITORY/main/Callibration_Model.xlsx"
 
-# =========================================================
+
+# ======================================================
 # STYLE
-# =========================================================
+# ======================================================
 
 st.markdown("""
 <style>
-
-.main {
-    background-color: #f4f7fb;
-}
-
-.block-container {
-    padding-top: 2rem;
-    padding-bottom: 2rem;
-}
-
 .hero-box {
     background: linear-gradient(135deg, #1f3b57, #3c7fa6);
     padding: 34px;
@@ -65,7 +57,6 @@ st.markdown("""
     color: white !important;
     font-size: 18px;
     line-height: 1.5;
-    margin-bottom: 0px;
 }
 
 .info-card {
@@ -74,10 +65,6 @@ st.markdown("""
     border-radius: 16px;
     box-shadow: 0px 2px 12px rgba(0,0,0,0.06);
     margin-bottom: 18px;
-}
-
-h2, h3 {
-    color: #24496b;
 }
 
 .stButton > button {
@@ -100,25 +87,13 @@ h2, h3 {
     border-radius: 15px;
     box-shadow: 0px 2px 10px rgba(0,0,0,0.08);
 }
-
-[data-testid="stTabs"] {
-    background-color: white;
-    border-radius: 14px;
-    padding: 10px;
-}
-
-div[data-testid="stDataFrame"] {
-    border-radius: 12px;
-    overflow: hidden;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
 
-# =========================================================
+# ======================================================
 # HEADER
-# =========================================================
+# ======================================================
 
 st.markdown("""
 <div class="hero-box">
@@ -131,94 +106,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# =========================================================
-# APP DESCRIPTION
-# =========================================================
-
-st.markdown("""
-<div class="info-card">
-    <h3>About This App</h3>
-    <p>
-    This app calibrates indoor positioning points by comparing observed/test locations
-    with known ground-truth control points. It applies four regression-based calibration
-    methods: Random Forest, Gaussian Process Regression, XGBoost, and Support Vector Machine.
-    </p>
-    <p>
-    The app calculates residual coordinate offsets, applies model-based corrections,
-    and compares model performance using mean error, median error, P90 reliability,
-    and standard deviation.
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-
-# =========================================================
-# EXCEL STRUCTURE DESCRIPTION
-# =========================================================
-
-with st.expander("Required Excel File Structure"):
-
-    st.write(
-        "The calibration file should be in wide format. Each row represents one "
-        "ground-control point. The true coordinates are stored once, and repeated "
-        "observed/test coordinates are stored across multiple test columns."
-    )
-
-    example_structure = pd.DataFrame({
-        "Path-Points": ["Path 1"],
-        "Point-ID": [1],
-        "Lat_true": [42.407123],
-        "Lon_true": [-71.119456],
-        "Lat_test_1": [42.407100],
-        "Lon_test_1": [-71.119430],
-        "Lat_test_2": [42.407090],
-        "Lon_test_2": [-71.119420],
-        "...": ["..."],
-        "Lat_test_10": [42.407080],
-        "Lon_test_10": [-71.119410],
-    })
-
-    st.dataframe(
-        example_structure,
-        hide_index=True,
-        use_container_width=True
-    )
-
-    st.info(
-        "Required columns: Lat_true, Lon_true, Lat_test_1, Lon_test_1 through "
-        "Lat_test_10, Lon_test_10. Optional columns include Path-Points and Point-ID."
-    )
-
-
-# =========================================================
-# MODE SELECTION
-# =========================================================
-
-mode = st.radio(
-    "Choose Calibration Mode",
-    [
-        "Train and Evaluate Calibration Models",
-        "Apply Existing Calibration Model to New Location"
-    ]
-)
-
-
-if mode == "Apply Existing Calibration Model to New Location":
-    st.info(
-        "This mode applies a previously trained calibration model to new-location points "
-        "without requiring ground-truth points."
-    )
-
-    st.warning(
-        "Results may contain positional inaccuracies because different buildings may have "
-        "different layouts, wall materials, signal conditions, and environmental interference. "
-        "This should be interpreted as estimated calibration, not validated calibration."
-    )
-
-
-# =========================================================
+# ======================================================
 # FUNCTIONS
-# =========================================================
+# ======================================================
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
@@ -240,20 +130,15 @@ def haversine(lat1, lon1, lat2, lon2):
 
 
 def reshape_calibration_excel(df):
-
     long_rows = []
 
     for _, row in df.iterrows():
-
         for i in range(1, 11):
-
             lat_col = f"Lat_test_{i}"
             lon_col = f"Lon_test_{i}"
 
             if lat_col in df.columns and lon_col in df.columns:
-
                 if pd.notna(row[lat_col]) and pd.notna(row[lon_col]):
-
                     long_rows.append({
                         "Path_Points": row.get("Path-Points"),
                         "Point_ID": row.get("Point-ID"),
@@ -274,18 +159,10 @@ def reshape_calibration_excel(df):
 
 
 def get_models():
-
     return {
-
         "Random Forest": (
-            RandomForestRegressor(
-                n_estimators=400,
-                random_state=42
-            ),
-            RandomForestRegressor(
-                n_estimators=400,
-                random_state=42
-            )
+            RandomForestRegressor(n_estimators=400, random_state=42),
+            RandomForestRegressor(n_estimators=400, random_state=42)
         ),
 
         "GPR": (
@@ -335,21 +212,11 @@ def get_models():
         "SVM": (
             make_pipeline(
                 StandardScaler(),
-                SVR(
-                    kernel="rbf",
-                    C=10,
-                    gamma=0.5,
-                    epsilon=1e-5
-                )
+                SVR(kernel="rbf", C=10, gamma=0.5, epsilon=1e-5)
             ),
             make_pipeline(
                 StandardScaler(),
-                SVR(
-                    kernel="rbf",
-                    C=10,
-                    gamma=0.5,
-                    epsilon=1e-5
-                )
+                SVR(kernel="rbf", C=10, gamma=0.5, epsilon=1e-5)
             )
         )
     }
@@ -383,188 +250,105 @@ def load_model(model_name):
     return lat_model, lon_model
 
 
-# =========================================================
-# TRAIN AND EVALUATE MODE
-# =========================================================
+def run_calibration(data):
+    X = data[["Lat_test", "Lon_test"]]
+    y_lat = data["Delta_Lat"]
+    y_lon = data["Delta_Lon"]
 
-if mode == "Train and Evaluate Calibration Models":
+    (
+        X_train,
+        X_test,
+        y_lat_train,
+        y_lat_test,
+        y_lon_train,
+        y_lon_test,
+        idx_train,
+        idx_test
+    ) = train_test_split(
+        X,
+        y_lat,
+        y_lon,
+        data.index,
+        test_size=0.2,
+        random_state=42
+    )
 
-    st.subheader("Upload or Use Sample Calibration Points")
+    test_data = data.loc[idx_test].copy()
 
-    use_example = st.checkbox("Use sample calibration points from GitHub")
+    models = get_models()
+    calibrated_outputs = {}
+    summaries = {}
 
-    GITHUB_SAMPLE_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPOSITORY/main/Callibration_Model.xlsx"
+    for model_name, (lat_model, lon_model) in models.items():
+        lat_model.fit(X_train, y_lat_train)
+        lon_model.fit(X_train, y_lon_train)
 
-    raw_df = None
+        pred_lat = lat_model.predict(X_test)
+        pred_lon = lon_model.predict(X_test)
 
-    if use_example:
-        try:
-            raw_df = pd.read_excel(GITHUB_SAMPLE_URL, sheet_name="CM")
-            st.success("Sample calibration file loaded from GitHub.")
-        except Exception as e:
-            st.error(
-                "Could not load the sample file from GitHub. Please check that your GitHub raw file URL is correct."
-            )
-            st.stop()
+        calibrated = test_data.copy()
 
-    else:
-        uploaded_file = st.file_uploader(
-            "Upload Calibration Excel or CSV File",
-            type=["xlsx", "csv"]
+        calibrated["Pred_Delta_Lat"] = pred_lat
+        calibrated["Pred_Delta_Lon"] = pred_lon
+
+        calibrated["Lat_calibrated"] = calibrated["Lat_test"] + pred_lat
+        calibrated["Lon_calibrated"] = calibrated["Lon_test"] + pred_lon
+
+        calibrated["Error_Before_m"] = haversine(
+            calibrated["Lat_test"],
+            calibrated["Lon_test"],
+            calibrated["Lat_true"],
+            calibrated["Lon_true"]
         )
 
-        if uploaded_file is not None:
+        calibrated["Error_After_m"] = haversine(
+            calibrated["Lat_calibrated"],
+            calibrated["Lon_calibrated"],
+            calibrated["Lat_true"],
+            calibrated["Lon_true"]
+        )
 
-            if uploaded_file.name.endswith(".csv"):
-                raw_df = pd.read_csv(uploaded_file)
-            else:
-                raw_df = pd.read_excel(uploaded_file, sheet_name="CM")
+        calibrated["Improvement_m"] = (
+            calibrated["Error_Before_m"] - calibrated["Error_After_m"]
+        )
 
-    if raw_df is not None:
+        calibrated_outputs[model_name] = calibrated
 
-        data = reshape_calibration_excel(raw_df)
-
-        if len(data) == 0:
-            st.error(
-                "No valid calibration observations were detected. Please check that your file includes "
-                "Lat_true, Lon_true, Lat_test_1, Lon_test_1 through Lat_test_10 and Lon_test_10."
+        summaries[model_name] = {
+            "Mean Error": round(calibrated["Error_After_m"].mean(), 2),
+            "Median Error": round(calibrated["Error_After_m"].median(), 2),
+            "P90 Reliability": round(np.percentile(calibrated["Error_After_m"], 90), 2),
+            "Std Dev": round(calibrated["Error_After_m"].std(), 2),
+            "Mean Error Before": round(calibrated["Error_Before_m"].mean(), 2),
+            "Improvement (%)": round(
+                (
+                    calibrated["Error_Before_m"].mean()
+                    - calibrated["Error_After_m"].mean()
+                )
+                / calibrated["Error_Before_m"].mean()
+                * 100,
+                2
             )
-            st.stop()
+        }
 
-        st.success(f"{len(data)} valid calibration observations detected.")
+        save_model(model_name, lat_model, lon_model)
 
-        if st.button("Run Calibration Models"):
+    comparison_df = pd.DataFrame(summaries).T.reset_index()
+    comparison_df.columns = [
+        "Model",
+        "Mean Error",
+        "Median Error",
+        "P90 Reliability",
+        "Std Dev",
+        "Mean Error Before",
+        "Improvement (%)"
+    ]
 
-            X = data[["Lat_test", "Lon_test"]]
-            y_lat = data["Delta_Lat"]
-            y_lon = data["Delta_Lon"]
-
-            (
-                X_train,
-                X_test,
-                y_lat_train,
-                y_lat_test,
-                y_lon_train,
-                y_lon_test,
-                idx_train,
-                idx_test
-            ) = train_test_split(
-                X,
-                y_lat,
-                y_lon,
-                data.index,
-                test_size=0.2,
-                random_state=42
-            )
-
-            test_data = data.loc[idx_test].copy()
-
-            models = get_models()
-
-            calibrated_outputs = {}
-            summaries = {}
-
-            with st.spinner("Running calibration models..."):
-
-                for model_name, (lat_model, lon_model) in models.items():
-
-                    lat_model.fit(X_train, y_lat_train)
-                    lon_model.fit(X_train, y_lon_train)
-
-                    pred_lat = lat_model.predict(X_test)
-                    pred_lon = lon_model.predict(X_test)
-
-                    calibrated = test_data.copy()
-
-                    calibrated["Pred_Delta_Lat"] = pred_lat
-                    calibrated["Pred_Delta_Lon"] = pred_lon
-
-                    calibrated["Lat_calibrated"] = (
-                        calibrated["Lat_test"] + pred_lat
-                    )
-
-                    calibrated["Lon_calibrated"] = (
-                        calibrated["Lon_test"] + pred_lon
-                    )
-
-                    calibrated["Error_Before_m"] = haversine(
-                        calibrated["Lat_test"],
-                        calibrated["Lon_test"],
-                        calibrated["Lat_true"],
-                        calibrated["Lon_true"]
-                    )
-
-                    calibrated["Error_After_m"] = haversine(
-                        calibrated["Lat_calibrated"],
-                        calibrated["Lon_calibrated"],
-                        calibrated["Lat_true"],
-                        calibrated["Lon_true"]
-                    )
-
-                    calibrated["Improvement_m"] = (
-                        calibrated["Error_Before_m"]
-                        - calibrated["Error_After_m"]
-                    )
-
-                    calibrated_outputs[model_name] = calibrated
-
-                    summaries[model_name] = {
-                        "Mean Error": round(calibrated["Error_After_m"].mean(), 2),
-                        "Median Error": round(calibrated["Error_After_m"].median(), 2),
-                        "P90 Reliability": round(
-                            np.percentile(calibrated["Error_After_m"], 90),
-                            2
-                        ),
-                        "Std Dev": round(calibrated["Error_After_m"].std(), 2),
-                        "Mean Error Before": round(calibrated["Error_Before_m"].mean(), 2),
-                        "Improvement (%)": round(
-                            (
-                                calibrated["Error_Before_m"].mean()
-                                - calibrated["Error_After_m"].mean()
-                            )
-                            / calibrated["Error_Before_m"].mean()
-                            * 100,
-                            2
-                        )
-                    }
-
-                    save_model(model_name, lat_model, lon_model)
-
-            st.success("Calibration completed successfully.")
-
-            comparison_df = pd.DataFrame(summaries).T.reset_index()
-            comparison_df.columns = [
-                "Model",
-                "Mean Error",
-                "Median Error",
-                "P90 Reliability",
-                "Std Dev",
-                "Mean Error Before",
-                "Improvement (%)"
-            ]
-
-            st.session_state["comparison_df"] = comparison_df
-            st.session_state["calibrated_outputs"] = calibrated_outputs
+    return comparison_df, calibrated_outputs
 
 
-# =========================================================
-# DISPLAY RESULTS
-# =========================================================
-
-if "comparison_df" in st.session_state and mode == "Train and Evaluate Calibration Models":
-
-    comparison_df = st.session_state["comparison_df"]
-    calibrated_outputs = st.session_state["calibrated_outputs"]
-
-    st.markdown("---")
+def show_results(comparison_df, calibrated_outputs):
     st.header("Results")
-
-    st.write(
-        "This section presents the comparative performance of four calibration models "
-        "in reducing positional error for indoor path tracking. Results are reported "
-        "using multiple accuracy and reliability metrics to evaluate both average "
-        "performance and robustness to spatial outliers."
-    )
 
     best_model = comparison_df.sort_values("Mean Error").iloc[0]["Model"]
     best_error = comparison_df.sort_values("Mean Error").iloc[0]["Mean Error"]
@@ -579,14 +363,11 @@ if "comparison_df" in st.session_state and mode == "Train and Evaluate Calibrati
     st.subheader("Comparison of Positional Error Metrics")
 
     display_df = comparison_df.copy()
+
     for col in ["Mean Error", "Median Error", "P90 Reliability", "Std Dev", "Mean Error Before"]:
         display_df[col] = display_df[col].astype(str) + " m"
 
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        hide_index=True
-    )
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     st.subheader("Cumulative Distribution Function of Positioning Error")
 
@@ -595,15 +376,9 @@ if "comparison_df" in st.session_state and mode == "Train and Evaluate Calibrati
     for model_name, df_model in calibrated_outputs.items():
         errors = np.sort(df_model["Error_After_m"])
         cdf = np.arange(1, len(errors) + 1) / len(errors)
-
         ax.plot(errors, cdf, label=model_name)
 
-    ax.axhline(
-        y=0.9,
-        linestyle="--",
-        label="P90 Reliability"
-    )
-
+    ax.axhline(y=0.9, linestyle="--", label="P90 Reliability")
     ax.set_xlabel("Positioning Error After Calibration (meters)")
     ax.set_ylabel("Cumulative Probability")
     ax.set_title("CDF of Positioning Error by Calibration Model")
@@ -617,10 +392,7 @@ if "comparison_df" in st.session_state and mode == "Train and Evaluate Calibrati
     fig2, ax2 = plt.subplots(figsize=(9, 6))
 
     ax2.boxplot(
-        [
-            calibrated_outputs[m]["Error_After_m"]
-            for m in calibrated_outputs.keys()
-        ],
+        [calibrated_outputs[m]["Error_After_m"] for m in calibrated_outputs.keys()],
         labels=list(calibrated_outputs.keys())
     )
 
@@ -630,7 +402,6 @@ if "comparison_df" in st.session_state and mode == "Train and Evaluate Calibrati
 
     st.pyplot(fig2)
 
-    st.markdown("---")
     st.header("Calibration Results by Method")
 
     tab_rf, tab_gpr, tab_xgb, tab_svm = st.tabs([
@@ -648,13 +419,9 @@ if "comparison_df" in st.session_state and mode == "Train and Evaluate Calibrati
     }
 
     for model_name, tab in tabs.items():
-
         with tab:
-
             df_model = calibrated_outputs[model_name]
-            model_summary = comparison_df[
-                comparison_df["Model"] == model_name
-            ].iloc[0]
+            model_summary = comparison_df[comparison_df["Model"] == model_name].iloc[0]
 
             st.subheader(f"{model_name} Calibration Results")
 
@@ -664,8 +431,6 @@ if "comparison_df" in st.session_state and mode == "Train and Evaluate Calibrati
             c2.metric("Median Error", f"{model_summary['Median Error']} m")
             c3.metric("P90 Reliability", f"{model_summary['P90 Reliability']} m")
             c4.metric("Std Dev", f"{model_summary['Std Dev']} m")
-
-            st.write("### Spatial Distribution of Calibrated Points")
 
             fig3, ax3 = plt.subplots(figsize=(8, 6))
 
@@ -701,30 +466,7 @@ if "comparison_df" in st.session_state and mode == "Train and Evaluate Calibrati
 
             st.pyplot(fig3)
 
-            st.write("### Calibrated Points Table")
-
-            st.dataframe(
-                df_model[
-                    [
-                        "Path_Points",
-                        "Point_ID",
-                        "Trial",
-                        "Lat_true",
-                        "Lon_true",
-                        "Lat_test",
-                        "Lon_test",
-                        "Pred_Delta_Lat",
-                        "Pred_Delta_Lon",
-                        "Lat_calibrated",
-                        "Lon_calibrated",
-                        "Error_Before_m",
-                        "Error_After_m",
-                        "Improvement_m"
-                    ]
-                ],
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(df_model, use_container_width=True, hide_index=True)
 
             csv = df_model.to_csv(index=False).encode("utf-8")
 
@@ -745,35 +487,159 @@ if "comparison_df" in st.session_state and mode == "Train and Evaluate Calibrati
     )
 
 
-# =========================================================
-# APPLY EXISTING MODEL MODE
-# =========================================================
+# ======================================================
+# MAIN APP TABS - COMPLETELY SEPARATED
+# ======================================================
 
-if mode == "Apply Existing Calibration Model to New Location":
+main_tab1, main_tab2 = st.tabs([
+    "Train & Compare Models",
+    "Apply Model to New Location"
+])
 
-    st.subheader("Upload New Location Points")
 
-    st.write(
-        "This file should include observed coordinates only. Required columns: "
-        "`Lat_test` and `Lon_test`."
-    )
+# ======================================================
+# TAB 1: TRAIN AND COMPARE
+# ======================================================
 
-    new_example = pd.DataFrame({
-        "Point_ID": [1, 2, 3],
-        "Lat_test": [42.407100, 42.407090, 42.407080],
-        "Lon_test": [-71.119430, -71.119420, -71.119410]
-    })
+with main_tab1:
 
-    with st.expander("Example Structure for New-Location Points"):
-        st.dataframe(
-            new_example,
-            hide_index=True,
-            use_container_width=True
+    st.markdown("""
+    <div class="info-card">
+        <h3>Train & Compare Calibration Models</h3>
+        <p>
+        This tab uses the calibration dataset with ground-truth points and observed test points.
+        The app trains four calibration models, compares their accuracy, and saves the trained
+        models for future use.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.expander("Required Excel Structure"):
+        example_structure = pd.DataFrame({
+            "Path-Points": ["Path 1"],
+            "Point-ID": [1],
+            "Lat_true": [42.407123],
+            "Lon_true": [-71.119456],
+            "Lat_test_1": [42.407100],
+            "Lon_test_1": [-71.119430],
+            "Lat_test_2": [42.407090],
+            "Lon_test_2": [-71.119420],
+            "...": ["..."],
+            "Lat_test_10": [42.407080],
+            "Lon_test_10": [-71.119410],
+        })
+
+        st.write(
+            "The Excel file should be in wide format. Each row represents one ground-control point. "
+            "The app expects true coordinates and repeated observed/test coordinates."
         )
 
+        st.dataframe(example_structure, hide_index=True, use_container_width=True)
+
+    data_source = st.radio(
+        "Choose data source",
+        [
+            "Use GitHub sample file",
+            "Upload my own file"
+        ],
+        horizontal=True
+    )
+
+    raw_df = None
+
+    if data_source == "Use GitHub sample file":
+        st.info("The app will use `Callibration_Model.xlsx` from your GitHub repository.")
+
+        if st.button("Load GitHub Sample File"):
+            try:
+                raw_df = pd.read_excel(GITHUB_SAMPLE_URL, sheet_name="CM")
+                st.session_state["raw_df_train"] = raw_df
+                st.success("GitHub sample file loaded successfully.")
+            except Exception:
+                st.error(
+                    "The GitHub file could not be loaded. Make sure you are using the RAW GitHub link."
+                )
+
+    else:
+        uploaded_file = st.file_uploader(
+            "Upload Calibration Excel or CSV File",
+            type=["xlsx", "csv"],
+            key="train_upload"
+        )
+
+        if uploaded_file is not None:
+            if uploaded_file.name.endswith(".csv"):
+                raw_df = pd.read_csv(uploaded_file)
+            else:
+                raw_df = pd.read_excel(uploaded_file, sheet_name="CM")
+
+            st.session_state["raw_df_train"] = raw_df
+            st.success("File uploaded successfully.")
+
+    if "raw_df_train" in st.session_state:
+        data = reshape_calibration_excel(st.session_state["raw_df_train"])
+
+        if len(data) == 0:
+            st.error("No valid calibration observations were detected.")
+        else:
+            st.success(f"{len(data)} valid calibration observations detected.")
+
+            if st.button("Run Calibration Models", key="run_train"):
+                with st.spinner("Running calibration models..."):
+                    comparison_df, calibrated_outputs = run_calibration(data)
+
+                st.session_state["comparison_df"] = comparison_df
+                st.session_state["calibrated_outputs"] = calibrated_outputs
+
+                st.success("Calibration completed successfully.")
+
+    if "comparison_df" in st.session_state and "calibrated_outputs" in st.session_state:
+        show_results(
+            st.session_state["comparison_df"],
+            st.session_state["calibrated_outputs"]
+        )
+
+
+# ======================================================
+# TAB 2: APPLY MODEL TO NEW LOCATION
+# ======================================================
+
+with main_tab2:
+
+    st.markdown("""
+    <div class="info-card">
+        <h3>Apply Model to New Location</h3>
+        <p>
+        This tab applies a previously trained calibration model to new observed points
+        from another location. Since these new points may not include ground-truth coordinates,
+        the results should be interpreted as estimated calibration.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.warning(
+        "Different buildings may have different layouts, wall materials, signal conditions, "
+        "and environmental interference. Using a model trained on another location can introduce error."
+    )
+
+    with st.expander("Required New-Location File Structure"):
+        new_example = pd.DataFrame({
+            "Point_ID": [1, 2, 3],
+            "Lat_test": [42.407100, 42.407090, 42.407080],
+            "Lon_test": [-71.119430, -71.119420, -71.119410]
+        })
+
+        st.write(
+            "For this tab, the new-location file only needs observed coordinates. "
+            "Required columns are `Lat_test` and `Lon_test`."
+        )
+
+        st.dataframe(new_example, hide_index=True, use_container_width=True)
+
     new_file = st.file_uploader(
-        "Upload CSV or Excel file containing new observed points",
-        type=["csv", "xlsx"]
+        "Upload New Location CSV or Excel File",
+        type=["csv", "xlsx"],
+        key="new_location_upload"
     )
 
     if new_file is not None:
@@ -783,113 +649,67 @@ if mode == "Apply Existing Calibration Model to New Location":
         else:
             new_df = pd.read_excel(new_file)
 
-        required_cols = ["Lat_test", "Lon_test"]
-
-        missing_cols = [
-            col for col in required_cols
-            if col not in new_df.columns
-        ]
-
-        if missing_cols:
-            st.error(
-                f"Missing required columns: {missing_cols}. "
-                "Please make sure your file includes Lat_test and Lon_test."
-            )
-            st.stop()
-
-        model_choice = st.selectbox(
-            "Select Calibration Model",
-            [
-                "Random Forest",
-                "GPR",
-                "XGBoost",
-                "SVM"
-            ]
-        )
-
-        if st.button("Apply Estimated Calibration"):
-
-            lat_model, lon_model = load_model(model_choice)
-
-            if lat_model is None or lon_model is None:
-                st.error(
-                    "No saved model was found for this method. Please first run "
-                    "the Train and Evaluate mode to create saved calibration models."
-                )
-                st.stop()
-
-            X_new = new_df[["Lat_test", "Lon_test"]]
-
-            pred_lat = lat_model.predict(X_new)
-            pred_lon = lon_model.predict(X_new)
-
-            new_df["Pred_Delta_Lat"] = pred_lat
-            new_df["Pred_Delta_Lon"] = pred_lon
-
-            new_df["Lat_calibrated"] = (
-                new_df["Lat_test"] + pred_lat
+        if "Lat_test" not in new_df.columns or "Lon_test" not in new_df.columns:
+            st.error("Your file must include `Lat_test` and `Lon_test` columns.")
+        else:
+            model_choice = st.selectbox(
+                "Select Calibration Model",
+                ["Random Forest", "GPR", "XGBoost", "SVM"]
             )
 
-            new_df["Lon_calibrated"] = (
-                new_df["Lon_test"] + pred_lon
-            )
+            if st.button("Apply Estimated Calibration", key="apply_new"):
+                lat_model, lon_model = load_model(model_choice)
 
-            st.success("Estimated calibration completed.")
+                if lat_model is None or lon_model is None:
+                    st.error(
+                        "No saved model was found. Please first run the Train & Compare Models tab."
+                    )
+                else:
+                    X_new = new_df[["Lat_test", "Lon_test"]]
 
-            st.warning(
-                "Because no ground-truth points were provided for this new location, "
-                "the app cannot calculate true positional error. These results are estimated."
-            )
+                    pred_lat = lat_model.predict(X_new)
+                    pred_lon = lon_model.predict(X_new)
 
-            c1, c2 = st.columns(2)
+                    new_df["Pred_Delta_Lat"] = pred_lat
+                    new_df["Pred_Delta_Lon"] = pred_lon
+                    new_df["Lat_calibrated"] = new_df["Lat_test"] + pred_lat
+                    new_df["Lon_calibrated"] = new_df["Lon_test"] + pred_lon
 
-            with c1:
-                st.metric("Number of Points", len(new_df))
+                    st.success("Estimated calibration completed.")
 
-            with c2:
-                st.metric("Calibration Type", "Estimated Cross-Location")
+                    st.dataframe(new_df, use_container_width=True, hide_index=True)
 
-            st.subheader("Estimated Calibrated Points")
+                    fig4, ax4 = plt.subplots(figsize=(8, 6))
 
-            st.dataframe(
-                new_df,
-                use_container_width=True,
-                hide_index=True
-            )
+                    ax4.scatter(
+                        new_df["Lon_test"],
+                        new_df["Lat_test"],
+                        label="Original Points",
+                        alpha=0.45,
+                        s=45
+                    )
 
-            st.subheader("Original vs Estimated Calibrated Points")
+                    ax4.scatter(
+                        new_df["Lon_calibrated"],
+                        new_df["Lat_calibrated"],
+                        label="Estimated Calibrated Points",
+                        alpha=0.8,
+                        s=45
+                    )
 
-            fig4, ax4 = plt.subplots(figsize=(8, 6))
+                    ax4.set_xlabel("Longitude")
+                    ax4.set_ylabel("Latitude")
+                    ax4.set_title("Estimated Cross-Location Calibration")
+                    ax4.legend()
+                    ax4.grid(True, alpha=0.3)
 
-            ax4.scatter(
-                new_df["Lon_test"],
-                new_df["Lat_test"],
-                label="Original Points",
-                alpha=0.5,
-                s=45
-            )
+                    st.pyplot(fig4)
 
-            ax4.scatter(
-                new_df["Lon_calibrated"],
-                new_df["Lat_calibrated"],
-                label="Estimated Calibrated Points",
-                alpha=0.8,
-                s=45
-            )
+                    csv = new_df.to_csv(index=False).encode("utf-8")
 
-            ax4.set_xlabel("Longitude")
-            ax4.set_ylabel("Latitude")
-            ax4.set_title("Estimated Cross-Location Calibration")
-            ax4.legend()
-            ax4.grid(True, alpha=0.3)
-
-            st.pyplot(fig4)
-
-            csv = new_df.to_csv(index=False).encode("utf-8")
-
-            st.download_button(
-                label="Download Estimated Calibrated Points",
-                data=csv,
-                file_name="estimated_cross_location_calibrated_points.csv",
-                mime="text/csv"
-            )
+                    st.download_button(
+                        label="Download Estimated Calibrated Points",
+                        data=csv,
+                        file_name="estimated_cross_location_calibrated_points.csv",
+                        mime="text/csv"
+                    )
