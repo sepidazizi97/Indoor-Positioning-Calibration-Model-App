@@ -27,7 +27,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Replace this with your actual raw GitHub link
 GITHUB_CALIBRATION_FILE = (
     "https://raw.githubusercontent.com/"
     "YOUR_USERNAME/YOUR_REPOSITORY/main/Callibration_Model.xlsx"
@@ -201,11 +200,6 @@ def remove_invalid_coordinates(df):
 
 
 def reshape_training_excel(df):
-    """
-    Required training structure:
-    Lat_true, Lon_true, Lat_test_1, Lon_test_1 ... Lat_test_10, Lon_test_10
-    """
-
     long_rows = []
 
     for _, row in df.iterrows():
@@ -244,12 +238,6 @@ def reshape_training_excel(df):
 
 
 def reshape_new_points_file(df):
-    """
-    New-location structure can be:
-    1. Lat_test, Lon_test
-    2. Lat_test_1, Lon_test_1 ... Lat_test_10, Lon_test_10
-    """
-
     if "Lat_test" in df.columns and "Lon_test" in df.columns:
         new_df = df.copy()
 
@@ -598,11 +586,6 @@ def show_comparison_results(comparison_df, calibrated_outputs):
 
     st.subheader("CDF of Positioning Error")
 
-    st.write(
-        "This chart compares the cumulative error distribution across calibration methods. "
-        "The x-axis is limited to the 95th percentile so extreme outliers do not hide the main pattern."
-    )
-
     fig, ax = plt.subplots(figsize=(9, 6))
 
     for model_name, df_model in calibrated_outputs.items():
@@ -630,23 +613,6 @@ def show_comparison_results(comparison_df, calibrated_outputs):
     ax.grid(True, alpha=0.3)
 
     st.pyplot(fig)
-
-    st.markdown("""
-    <div class="warning-card">
-
-    <b>Outlier Handling:</b><br><br>
-
-    Extreme spatial outliers can distort the visualization scale
-    and make model comparison difficult.
-
-    To improve readability, the boxplot visualization excludes
-    extreme outliers above the 95th percentile.
-
-    However, all outlier values are still preserved and reported
-    in the Outlier Check table above.
-
-    </div>
-    """, unsafe_allow_html=True)
 
     st.subheader("Residual Error Distribution")
 
@@ -707,13 +673,6 @@ def show_comparison_results(comparison_df, calibrated_outputs):
             m2.metric("Median Error", f"{row['Median Error']} m")
             m3.metric("P90 Reliability", f"{row['P90 Reliability']} m")
             m4.metric("Std Dev", f"{row['Std Dev']} m")
-
-            if df_model["Error_After_m"].max() > plot_limit:
-                st.warning(
-                    f"This model contains outliers. "
-                    f"Maximum error: {round(df_model['Error_After_m'].max(), 2)} m. "
-                    "The plot is zoomed to the main reference area."
-                )
 
             fig3 = plot_points(
                 df_model,
