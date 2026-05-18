@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -19,22 +18,13 @@ except:
     XGBOOST_AVAILABLE = False
 
 
-# ======================================================
-# APP CONFIG
-# ======================================================
-
 st.set_page_config(
     page_title="Indoor Positioning Calibration App",
     layout="wide"
 )
 
-# Replace this with your actual RAW GitHub link
 GITHUB_CALIBRATION_FILE = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPOSITORY/main/Callibration_Model.xlsx"
 
-
-# ======================================================
-# STYLE
-# ======================================================
 
 st.markdown("""
 <style>
@@ -100,8 +90,8 @@ st.markdown("""
 <div class="hero-box">
     <div class="hero-title">Indoor Positioning Calibration App</div>
     <div class="hero-subtitle">
-        A regression-based spatial calibration tool for improving indoor positioning accuracy
-        using Random Forest, GPR, XGBoost, and SVM.
+        Upload indoor positioning data, apply regression-based calibration methods,
+        and compare corrected locations using clear spatial accuracy metrics.
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -110,6 +100,46 @@ st.markdown("""
 # ======================================================
 # FUNCTIONS
 # ======================================================
+
+def fix_swapped_coordinates(df, lat_col="Lat_test", lon_col="Lon_test"):
+    """
+    Detects rows where latitude/longitude appear reversed.
+    This is useful when latitude appears around -70 and longitude appears around 40.
+    """
+
+    df = df.copy()
+
+    swapped_mask = (
+        (df[lat_col].abs() > 60) &
+        (df[lon_col].abs() < 60)
+    )
+
+    if swapped_mask.sum() > 0:
+        temp_lat = df.loc[swapped_mask, lat_col].copy()
+        df.loc[swapped_mask, lat_col] = df.loc[swapped_mask, lon_col]
+        df.loc[swapped_mask, lon_col] = temp_lat
+
+    return df, swapped_mask.sum()
+
+
+def remove_extreme_outliers(df):
+    """
+    Removes impossible latitude/longitude values after the swap check.
+    """
+
+    df = df.copy()
+
+    valid_mask = (
+        df["Lat_test"].between(-90, 90) &
+        df["Lon_test"].between(-180, 180) &
+        df["Lat_true"].between(-90, 90) &
+        df["Lon_true"].between(-180, 180)
+    )
+
+    removed_count = len(df) - valid_mask.sum()
+
+    return df[valid_mask].copy(), removed_count
+
 
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371000
@@ -131,12 +161,6 @@ def haversine(lat1, lon1, lat2, lon2):
 
 
 def reshape_training_excel(df):
-    """
-    Converts your calibration Excel from wide format to long format.
-    Expected columns:
-    Lat_true, Lon_true, Lat_test_1, Lon_test_1 ... Lat_test_10, Lon_test_10
-    """
-
     long_rows = []
 
     for _, row in df.iterrows():
@@ -146,7 +170,6 @@ def reshape_training_excel(df):
 
             if lat_col in df.columns and lon_col in df.columns:
                 if pd.notna(row[lat_col]) and pd.notna(row[lon_col]):
-
                     long_rows.append({
                         "Path_Points": row.get("Path-Points", None),
                         "Point_ID": row.get("Point-ID", None),
@@ -160,22 +183,26 @@ def reshape_training_excel(df):
     long_df = pd.DataFrame(long_rows)
 
     if len(long_df) > 0:
+        long_df, swapped_count = fix_swapped_coordinates(long_df)
+        long_df, removed_count = remove_extreme_outliers(long_df)
+
         long_df["Delta_Lat"] = long_df["Lat_true"] - long_df["Lat_test"]
         long_df["Delta_Lon"] = long_df["Lon_true"] - long_df["Lon_test"]
+
+        st.info(
+            f"Coordinate check completed. Swapped coordinate rows corrected: {swapped_count}. "
+            f"Invalid rows removed: {removed_count}."
+        )
 
     return long_df
 
 
 def reshape_new_points_file(df):
-    """
-    Handles new-location points without true coordinates.
-    Accepts either:
-    1. Long format: Lat_test, Lon_test
-    2. Wide format: Lat_test_1, Lon_test_1 ... Lat_test_10, Lon_test_10
-    """
-
     if "Lat_test" in df.columns and "Lon_test" in df.columns:
-        return df.copy()
+        new_df = df.copy()
+        new_df, swapped_count = fix_swapped_coordinates(new_df)
+        st.info(f"Coordinate check completed. Swapped coordinate rows corrected: {swapped_count}.")
+        return new_df
 
     long_rows = []
 
@@ -186,14 +213,28 @@ def reshape_new_points_file(df):
 
             if lat_col in df.columns and lon_col in df.columns:
                 if pd.notna(row[lat_col]) and pd.notna(row[lon_col]):
-                    new_row = row.to_dict()
-                    new_row["Original_Row"] = idx + 1
-                    new_row["Trial"] = i
-                    new_row["Lat_test"] = row[lat_col]
-                    new_row["Lon_test"] = row[lon_col]
+                    new_row = {
+                        "Original_Row": idx + 1,
+                        "Trial": i,
+                        "Lat_test": row[lat_col],
+                        "Lon_test": row[lon_col],
+                    }
+
+                    if "Point-ID" in df.columns:
+                        new_row["Point_ID"] = row["Point-ID"]
+
+                    if "Path-Points" in df.columns:
+                        new_row["Path_Points"] = row["Path-Points"]
+
                     long_rows.append(new_row)
 
-    return pd.DataFrame(long_rows)
+    new_df = pd.DataFrame(long_rows)
+
+    if len(new_df) > 0:
+        new_df, swapped_count = fix_swapped_coordinates(new_df)
+        st.info(f"Coordinate check completed. Swapped coordinate rows corrected: {swapped_count}.")
+
+    return new_df
 
 
 def get_models():
@@ -262,11 +303,6 @@ def get_models():
 
 
 def train_models_on_all_data(training_data):
-    """
-    Used in Tab 2.
-    Trains models on all available GitHub calibration points.
-    """
-
     X = training_data[["Lat_test", "Lon_test"]]
     y_lat = training_data["Delta_Lat"]
     y_lon = training_data["Delta_Lon"]
@@ -286,11 +322,6 @@ def train_models_on_all_data(training_data):
 
 
 def train_and_evaluate_models(training_data):
-    """
-    Used in Tab 1.
-    Splits uploaded calibration file into training/testing and compares model performance.
-    """
-
     X = training_data[["Lat_test", "Lon_test"]]
     y_lat = training_data["Delta_Lat"]
     y_lon = training_data["Delta_Lon"]
@@ -375,8 +406,79 @@ def train_and_evaluate_models(training_data):
     return comparison_df, calibrated_outputs
 
 
-def show_comparison_results(comparison_df, calibrated_outputs):
+def set_equal_zoom(ax, lon_values, lat_values, padding_ratio=0.15):
+    lon_values = pd.Series(lon_values).dropna()
+    lat_values = pd.Series(lat_values).dropna()
 
+    lon_min, lon_max = lon_values.min(), lon_values.max()
+    lat_min, lat_max = lat_values.min(), lat_values.max()
+
+    lon_range = lon_max - lon_min
+    lat_range = lat_max - lat_min
+
+    if lon_range == 0:
+        lon_range = 0.0001
+    if lat_range == 0:
+        lat_range = 0.0001
+
+    lon_pad = lon_range * padding_ratio
+    lat_pad = lat_range * padding_ratio
+
+    ax.set_xlim(lon_min - lon_pad, lon_max + lon_pad)
+    ax.set_ylim(lat_min - lat_pad, lat_max + lat_pad)
+
+
+def plot_points(df_model, title):
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    ax.scatter(
+        df_model["Lon_true"],
+        df_model["Lat_true"],
+        label="Ground-Truth Points",
+        marker="x",
+        s=75
+    )
+
+    ax.scatter(
+        df_model["Lon_test"],
+        df_model["Lat_test"],
+        label="Original Test Points",
+        alpha=0.35,
+        s=40
+    )
+
+    ax.scatter(
+        df_model["Lon_calibrated"],
+        df_model["Lat_calibrated"],
+        label="Calibrated Points",
+        alpha=0.8,
+        s=45
+    )
+
+    all_lons = pd.concat([
+        df_model["Lon_true"],
+        df_model["Lon_test"],
+        df_model["Lon_calibrated"]
+    ])
+
+    all_lats = pd.concat([
+        df_model["Lat_true"],
+        df_model["Lat_test"],
+        df_model["Lat_calibrated"]
+    ])
+
+    set_equal_zoom(ax, all_lons, all_lats)
+
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.set_title(title)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    return fig
+
+
+def show_comparison_results(comparison_df, calibrated_outputs):
     st.header("Calibration Model Comparison")
 
     best_model = comparison_df.sort_values("Mean Error").iloc[0]["Model"]
@@ -388,16 +490,6 @@ def show_comparison_results(comparison_df, calibrated_outputs):
     c1.metric("Best Model", best_model)
     c2.metric("Lowest Mean Error", f"{best_error} m")
     c3.metric("Best P90 Reliability", f"{best_p90} m")
-
-    st.markdown("""
-    <div class="method-card">
-        <b>How to interpret the metrics:</b><br>
-        Mean Error shows the average distance between calibrated points and true points.
-        Median Error shows the typical error level.
-        P90 Reliability means that 90% of calibrated points have an error equal to or below that value.
-        Standard deviation shows how stable or variable the model performance is.
-    </div>
-    """, unsafe_allow_html=True)
 
     display_df = comparison_df.copy()
 
@@ -457,7 +549,6 @@ def show_comparison_results(comparison_df, calibrated_outputs):
 
     for model_name, tab in tabs.items():
         with tab:
-
             df_model = calibrated_outputs[model_name]
             row = comparison_df[comparison_df["Model"] == model_name].iloc[0]
 
@@ -470,38 +561,7 @@ def show_comparison_results(comparison_df, calibrated_outputs):
             m3.metric("P90 Reliability", f"{row['P90 Reliability']} m")
             m4.metric("Std Dev", f"{row['Std Dev']} m")
 
-            fig3, ax3 = plt.subplots(figsize=(8, 6))
-
-            ax3.scatter(
-                df_model["Lon_true"],
-                df_model["Lat_true"],
-                label="Ground-Truth Points",
-                marker="x",
-                s=75
-            )
-
-            ax3.scatter(
-                df_model["Lon_test"],
-                df_model["Lat_test"],
-                label="Original Test Points",
-                alpha=0.35,
-                s=40
-            )
-
-            ax3.scatter(
-                df_model["Lon_calibrated"],
-                df_model["Lat_calibrated"],
-                label="Calibrated Points",
-                alpha=0.8,
-                s=45
-            )
-
-            ax3.set_xlabel("Longitude")
-            ax3.set_ylabel("Latitude")
-            ax3.set_title(f"{model_name} Calibrated Points")
-            ax3.legend()
-            ax3.grid(True, alpha=0.3)
-
+            fig3 = plot_points(df_model, f"{model_name} Calibrated Points")
             st.pyplot(fig3)
 
             st.dataframe(df_model, use_container_width=True, hide_index=True)
@@ -521,8 +581,8 @@ def show_comparison_results(comparison_df, calibrated_outputs):
 # ======================================================
 
 tab1, tab2 = st.tabs([
-    "1. Calibrate with True Points",
-    "2. Calibrate New Points Without True Locations"
+    "1. Calibrate with Reference Points",
+    "2. Calibrate New Points Without Reference Locations"
 ])
 
 
@@ -534,21 +594,20 @@ with tab1:
 
     st.markdown("""
     <div class="info-card">
-        <h3>Calibrate with True Points</h3>
+        <h3>Calibrate with Reference Points</h3>
         <p>
-        Use this tab when you have a calibration Excel file similar to your original
-        calibration model file. The file should include true ground-control coordinates
-        and repeated observed/test coordinates.
+        Use this tab to upload a calibration dataset that includes both observed indoor positioning points
+        and known reference points. The app compares observed locations with reference locations,
+        calculates spatial offsets, and evaluates four calibration methods.
         </p>
         <p>
-        The app will reshape the file, calculate residual offsets, train four models,
-        and compare their performance using mean error, median error, P90 reliability,
-        and standard deviation.
+        This option is recommended when users have collected ground-control points or other trusted
+        reference locations for checking calibration accuracy.
         </p>
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("Required Excel Structure for Tab 1"):
+    with st.expander("Required Excel Structure for This Tab"):
         example = pd.DataFrame({
             "Path-Points": ["Path 1"],
             "Point-ID": [1],
@@ -564,15 +623,15 @@ with tab1:
         })
 
         st.write(
-            "Each row should represent one ground-control point. "
-            "`Lat_true` and `Lon_true` are the actual/reference coordinates. "
+            "Each row should represent one reference point. "
+            "`Lat_true` and `Lon_true` are the reference coordinates. "
             "`Lat_test_1`, `Lon_test_1` through `Lat_test_10`, `Lon_test_10` are repeated observed points."
         )
 
         st.dataframe(example, use_container_width=True, hide_index=True)
 
     uploaded_training_file = st.file_uploader(
-        "Upload calibration Excel file with true points",
+        "Upload calibration Excel file with reference points",
         type=["xlsx", "csv"],
         key="tab1_training_file"
     )
@@ -620,33 +679,30 @@ with tab2:
 
     st.markdown("""
     <div class="info-card">
-        <h3>Calibrate New Points Without True Locations</h3>
+        <h3>Calibrate New Points Without Reference Locations</h3>
         <p>
-        Use this tab when you have new observed points but do not have actual/reference
-        point locations. The app will use your GitHub calibration Excel file as the
-        training reference dataset, train the selected model in the background, and then
-        apply that model to the new points.
+        Use this tab to upload new observed indoor positioning points when reference locations are not available.
+        The app applies a pre-trained calibration model based on the sample calibration dataset included with
+        this application.
         </p>
         <p>
-        Since the new file does not include true coordinates, the app cannot calculate
-        real positional error for the new location. The output should be interpreted as
-        estimated calibration.
+        Because the uploaded file does not include true/reference coordinates, the app cannot calculate actual
+        positional error for these new points. The results should be interpreted as estimated corrected locations.
         </p>
     </div>
     """, unsafe_allow_html=True)
 
     st.markdown("""
     <div class="warning-card">
-        <b>Important:</b><br>
-        This workflow transfers a calibration pattern from your original calibration dataset
-        to a new location. This can be useful, but it may introduce error because indoor
-        environments differ in layout, signal behavior, wall materials, device conditions,
-        and interference. For the best validation, collect at least a few true control points
-        in the new location when possible.
+        <b>Important note:</b><br>
+        Calibration models are influenced by the environment where the training data were collected.
+        Results may vary in buildings with different layouts, wall materials, signal conditions,
+        device settings, or sources of interference. For higher accuracy, users are encouraged to
+        collect a small number of reference points in the new location when possible.
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("Required Excel Structure for Tab 2"):
+    with st.expander("Required Excel Structure for This Tab"):
         example2 = pd.DataFrame({
             "Point_ID": [1, 2, 3],
             "Lat_test": [42.407100, 42.407090, 42.407080],
@@ -654,7 +710,7 @@ with tab2:
         })
 
         st.write(
-            "The new points file only needs observed/test coordinates. "
+            "The new points file only needs observed coordinates. "
             "The easiest format is `Lat_test` and `Lon_test`. "
             "The app can also read a wide file with `Lat_test_1`, `Lon_test_1`, etc."
         )
@@ -662,7 +718,7 @@ with tab2:
         st.dataframe(example2, use_container_width=True, hide_index=True)
 
     uploaded_new_points = st.file_uploader(
-        "Upload new observed points without true locations",
+        "Upload new observed points without reference locations",
         type=["xlsx", "csv"],
         key="tab2_new_points"
     )
@@ -690,12 +746,12 @@ with tab2:
 
                 if st.button("Calibrate New Points", key="run_tab2"):
 
-                    with st.spinner("Loading your GitHub calibration file and training model..."):
+                    with st.spinner("Loading calibration reference file and training model..."):
                         github_df = pd.read_excel(GITHUB_CALIBRATION_FILE, sheet_name="CM")
                         github_training_data = reshape_training_excel(github_df)
 
                         if len(github_training_data) == 0:
-                            st.error("No valid training data was found in your GitHub calibration file.")
+                            st.error("No valid training data was found in the built-in calibration file.")
                             st.stop()
 
                         trained_models = train_models_on_all_data(github_training_data)
@@ -715,14 +771,14 @@ with tab2:
                     output["Lat_calibrated"] = output["Lat_test"] + output["Pred_Delta_Lat"]
                     output["Lon_calibrated"] = output["Lon_test"] + output["Pred_Delta_Lon"]
                     output["Calibration_Method"] = model_choice
-                    output["Calibration_Type"] = "Estimated calibration without true locations"
+                    output["Calibration_Type"] = "Estimated calibration without reference locations"
 
                     st.session_state["tab2_output"] = output
 
                     st.success("New points were calibrated successfully.")
 
         except Exception as e:
-            st.error("Could not process the file or GitHub calibration dataset.")
+            st.error("Could not process the file or calibration reference dataset.")
             st.write(e)
 
     if "tab2_output" in st.session_state:
@@ -733,7 +789,7 @@ with tab2:
 
         st.dataframe(output, use_container_width=True, hide_index=True)
 
-        st.subheader("Original vs Calibrated Points")
+        st.subheader("Original vs Estimated Calibrated Points")
 
         fig4, ax4 = plt.subplots(figsize=(8, 6))
 
@@ -753,6 +809,11 @@ with tab2:
             s=45
         )
 
+        all_lons = pd.concat([output["Lon_test"], output["Lon_calibrated"]])
+        all_lats = pd.concat([output["Lat_test"], output["Lat_calibrated"]])
+
+        set_equal_zoom(ax4, all_lons, all_lats)
+
         ax4.set_xlabel("Longitude")
         ax4.set_ylabel("Latitude")
         ax4.set_title(f"Estimated Calibration Using {output['Calibration_Method'].iloc[0]}")
@@ -766,6 +827,6 @@ with tab2:
         st.download_button(
             label="Download Estimated Calibrated Points",
             data=csv,
-            file_name="estimated_calibrated_points_without_true_locations.csv",
+            file_name="estimated_calibrated_points_without_reference_locations.csv",
             mime="text/csv"
         )
